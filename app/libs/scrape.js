@@ -53,7 +53,7 @@ const _freeMTeam = async function (url, cookie) {
     if (typeof body === 'string') {
       try {
         data = JSON.parse(body);
-      } catch (e) {
+      } catch {
         data = null;
       }
     }

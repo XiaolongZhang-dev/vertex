@@ -36,7 +36,7 @@ const _api = async function (cookie, path, data, type = 'form') {
       if (typeof body === 'string') {
         try {
           parsed = JSON.parse(body);
-        } catch (e) {
+        } catch {
           parsed = null;
         }
       }
