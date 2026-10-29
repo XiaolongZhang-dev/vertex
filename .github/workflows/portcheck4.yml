@@ -1,0 +1,9 @@
+name: Port Check 4
+on: [push]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: TCP 10087
+        run: |
+          if timeout 8 bash -c 'cat < /dev/null > /dev/tcp/183.241.45.155/10087' 2>/dev/null; then echo PORT_OPEN_NEWIP; else echo PORT_CLOSED_NEWIP; fi
