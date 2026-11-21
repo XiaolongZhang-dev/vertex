@@ -9,7 +9,7 @@ RUN \
   cd /app/vertex && \
   git checkout COMMIT_ID && \
   rm .git webui -rf && \
-  PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true npm i --save && \
+  PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true npm ci && \
   mkdir /vertex && \
   ln -s /vertex/data /app/vertex/app/data && \
   ln -s /vertex/db /app/vertex/app/db && \
