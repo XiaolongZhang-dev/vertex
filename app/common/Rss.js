@@ -281,6 +281,17 @@ class Rss {
         await this.ntf.rejectTorrent(this._rss, _client, torrent, `拒绝原因: 低于下载器最小剩余空间 ${util.formatSize(_client.maindata.freeSpaceOnDisk)}`);
         return;
       }
+      // 抢首发窗口: 只加发布时间在 N 分钟内的种子，过期种子不再入场 (MAX_PUBLISH_AGE_MINUTES=0 可关闭)
+      const maxPubAgeMin = +(process.env.MAX_PUBLISH_AGE_MINUTES || 20);
+      if (maxPubAgeMin > 0 && +torrent.pubTime > 0) {
+        const pubAgeMin = Math.floor((moment().unix() - +torrent.pubTime) / 60);
+        if (pubAgeMin > maxPubAgeMin) {
+          await util.runRecord('INSERT INTO torrents (hash, name, size, rss_id, link, record_time, record_type, record_note) values (?, ?, ?, ?, ?, ?, ?, ?)',
+            [torrent.hash, torrent.name, torrent.size, this.id, torrent.link, moment().unix(), 2, `拒绝原因: 发布时间超过 ${maxPubAgeMin} 分钟`]);
+          await this.ntf.rejectTorrent(this._rss, _client, torrent, `拒绝原因: 发布时间超过 ${maxPubAgeMin} 分钟`);
+          return;
+        }
+      }
       const fitRules = this.acceptRules.filter(item => this._fitRule(item, torrent));
       if (fitRules.length === 0 && this.acceptRules.length !== 0) {
         await util.runRecord('INSERT INTO torrents (hash, name, size, rss_id, link, record_time, record_type, record_note) values (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -315,15 +326,18 @@ class Rss {
       if (this.scrapeFree && hotMinLeech > 0) {
         const hot = await scrape.getTorrentHotness(torrent.link);
         if (hot) {
-          const seeders = +hot.seeders || 0;
-          const leechers = +hot.leechers || 0;
-          const hotRatio = +(process.env.HOT_MIN_LEECH_RATIO || 1);
-          const hotPass = leechers >= hotMinLeech && (seeders === 0 || leechers >= seeders * hotRatio);
-          if (!hotPass) {
-            await util.runRecord('INSERT INTO torrents (hash, name, size, rss_id, link, record_time, record_type, record_note) values (?, ?, ?, ?, ?, ?, ?, ?)',
-              [torrent.hash, torrent.name, torrent.size, this.id, torrent.link, moment().unix(), 2, `拒绝原因: 冷门种子 seeds=${seeders} leech=${leechers}`]);
-            await this.ntf.rejectTorrent(this._rss, _client, torrent, `拒绝原因: 冷门种子 seeds=${seeders} leech=${leechers}`);
-            return;
+          const seeders = Number.isFinite(+hot.seeders) ? +hot.seeders : 0;
+          const leechers = Number.isFinite(+hot.leechers) ? +hot.leechers : 0;
+          // 统计值缺失（负数）时不做过滤，避免把「未知」误判为冷门
+          if (seeders >= 0 && leechers >= 0) {
+            const hotRatio = +(process.env.HOT_MIN_LEECH_RATIO || 1);
+            const hotPass = leechers >= hotMinLeech && (seeders === 0 || leechers >= seeders * hotRatio);
+            if (!hotPass) {
+              await util.runRecord('INSERT INTO torrents (hash, name, size, rss_id, link, record_time, record_type, record_note) values (?, ?, ?, ?, ?, ?, ?, ?)',
+                [torrent.hash, torrent.name, torrent.size, this.id, torrent.link, moment().unix(), 2, `拒绝原因: 冷门种子 seeds=${seeders} leech=${leechers}`]);
+              await this.ntf.rejectTorrent(this._rss, _client, torrent, `拒绝原因: 冷门种子 seeds=${seeders} leech=${leechers}`);
+              return;
+            }
           }
         }
       }
