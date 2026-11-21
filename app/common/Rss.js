@@ -1,5 +1,6 @@
 const rss = require('../libs/rss');
 const util = require('../libs/util');
+const scrape = require('../libs/scrape');
 const logger = require('../libs/logger');
 const redis = require('../libs/redis');
 const cron = require('node-cron');
@@ -307,6 +308,23 @@ class Rss {
             [torrent.hash, torrent.name, torrent.size, this.id, torrent.link, moment().unix(), 2, `拒绝原因: 抓取免费种子失败 ${e.message}`]);
           await this.ntf.scrapeError(this._rss, torrent);
           return;
+        }
+      }
+      // 热门度筛选: 只加「人比种多」的种子，避免给冷门种当陪跑 (HOT_MIN_LEECHERS=0 可关闭)
+      const hotMinLeech = +(process.env.HOT_MIN_LEECHERS || 5);
+      if (this.scrapeFree && hotMinLeech > 0) {
+        const hot = await scrape.getTorrentHotness(torrent.link);
+        if (hot) {
+          const seeders = +hot.seeders || 0;
+          const leechers = +hot.leechers || 0;
+          const hotRatio = +(process.env.HOT_MIN_LEECH_RATIO || 1);
+          const hotPass = leechers >= hotMinLeech && (seeders === 0 || leechers >= seeders * hotRatio);
+          if (!hotPass) {
+            await util.runRecord('INSERT INTO torrents (hash, name, size, rss_id, link, record_time, record_type, record_note) values (?, ?, ?, ?, ?, ?, ?, ?)',
+              [torrent.hash, torrent.name, torrent.size, this.id, torrent.link, moment().unix(), 2, `拒绝原因: 冷门种子 seeds=${seeders} leech=${leechers}`]);
+            await this.ntf.rejectTorrent(this._rss, _client, torrent, `拒绝原因: 冷门种子 seeds=${seeders} leech=${leechers}`);
+            return;
+          }
         }
       }
       if (this.scrapeHr) {

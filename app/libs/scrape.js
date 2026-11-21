@@ -72,7 +72,13 @@ const _freeMTeam = async function (url, cookie) {
       logger.error('M-Team 抓取免费状态异常返回:', lastBody.slice(0, 300));
       throw new Error('疑似登录状态失效, 请检查 Api Key');
     }
-    return (data.data.status?.discount || '').indexOf('FREE') !== -1;
+    const st = data.data.status || {};
+    // 顺带缓存候选种子热度（seeders/leechers），供 RSS 选种时按「人比种多」过滤
+    if (st.seeders !== undefined || st.leechers !== undefined) {
+      await redis.setWithExpire(`vertex:scrape:hot:${tid}`,
+        JSON.stringify({ seeders: Number(st.seeders) || 0, leechers: Number(st.leechers) || 0 }), 3600);
+    }
+    return (st.discount || '').indexOf('FREE') !== -1;
   }
   throw new Error(`M-Team 抓取免费状态失败(限流)，已重试 5 次: ${lastBody.slice(0, 120)}`);
 };
@@ -320,6 +326,17 @@ exports.free = async (url, cookie) => {
     return await freeWrapper[host](url, cookie);
   }
   throw new Error(`暂不支持 ${host} 抓取免费, 请检查后重试.`);
+};
+
+// 读取 _freeMTeam 顺带缓存的候选热度（仅 M-Team 有效），失败时返回 null（不做过滤）
+exports.getTorrentHotness = async (url) => {
+  try {
+    const tid = url.match(/\/(\d+)/)[1];
+    const cache = await redis.get(`vertex:scrape:hot:${tid}`);
+    return cache ? JSON.parse(cache) : null;
+  } catch {
+    return null;
+  }
 };
 
 exports.hr = async (url, cookie) => {
