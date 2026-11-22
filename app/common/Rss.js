@@ -328,8 +328,10 @@ class Rss {
         if (hot) {
           const seeders = Number.isFinite(+hot.seeders) ? +hot.seeders : 0;
           const leechers = Number.isFinite(+hot.leechers) ? +hot.leechers : 0;
-          // 统计值缺失（负数）时不做过滤，避免把「未知」误判为冷门
-          if (seeders >= 0 && leechers >= 0) {
+          // 统计值缺失（负数）或刚发布还没 peer（0/0）时视为「未知」，不做过滤，
+          // 否则新种会被误判为冷门，与「抢首发」目标相反
+          const hotUnknown = seeders < 0 || leechers < 0 || (seeders === 0 && leechers === 0);
+          if (!hotUnknown) {
             const hotRatio = +(process.env.HOT_MIN_LEECH_RATIO || 1);
             const hotPass = leechers >= hotMinLeech && (seeders === 0 || leechers >= seeders * hotRatio);
             if (!hotPass) {
